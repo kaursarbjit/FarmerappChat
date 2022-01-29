@@ -1,0 +1,29 @@
+version: '2'
+
+services:
+    farmerapp_api:
+        restart: always
+        build:
+            dockerfile: Dockerfile
+            context: .
+        ports:
+            - '80:80'
+        environment:
+            - POSTGRES_DATABASE
+            - POSTGRES_USERNAME
+            - POSTGRES_PASSWORD
+            - POSTGRES_PORT
+            - POSTGRES_HOST
+        depends_on:
+            - pgdb
+    pgdb:
+         image: postgis/postgis:12-master
+         restart: always
+#         env_file:
+#           - '.env'
+         environment:
+            - POSTGRES_PASSWORD
+         ports:
+            - '5432:5432'
+         volumes:
+            - '../pgdata:/var/lib/postgresql/data'
