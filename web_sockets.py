@@ -8,7 +8,7 @@ from flask_socketio import SocketIO, join_room, leave_room
 from datetime import datetime, timezone
 
 from dbwrapper import connect_database
-from dbwrapper.db_utils import fetch_room_members
+from dbwrapper.db_utils import fetch_room_members, push_notification
 from exceptions import CustomErrors
 
 socketio = SocketIO(engineio_logger=True)
@@ -63,14 +63,45 @@ def handle_send_message_event(data):
         # insert data in message table
         try:
             db_connection = connect_database.ConnectDatabase()
+
+            query = "SELECT DISTINCT notification_template.template, notification_type.type,notification_template.id, \
+                     notification_type.route FROM notification_template JOIN notification_type ON notification_type.id =\
+                     notification_template.type_id WHERE notification_template.language_id= {}and \
+                     notification_template.type_id = 9;".format(data['language_id'], )
+            db_connection.cursor.execute(query)
+            notification_data = db_connection.cursor.fetchone()
+            title = notification_data[1]
+            query = "SELECT name FROM users WHERE id={};".format(data['sender_id'], )
+            db_connection.cursor.execute(query)
+            name = db_connection.cursor.fetchone()[0]
+            template = notification_data[0]
+            message_template = template.replace("<name>", name)
+
+            query = "SELECT  notification_status FROM users WHERE id={};".format(data['receiver_id'], )
+            db_connection.cursor.execute(query)
+            notification_status = db_connection.cursor.fetchone()[0]
+            notified_at = datetime.utcnow()
+
             query = "INSERT INTO messages(chat_room_id, sender_id, receiver_id, message, created_at)\
                     VALUES({},{},{},'{}','{}') RETURNING id;".format(data['room_id'], data['sender_id'],
                                                                      data['receiver_id'], data['message'],
                                                                      created_at)
             db_connection.cursor.execute(query)
             message_id = db_connection.cursor.fetchone()[0]
-            db_connection.connection.commit()
+
             data['message_id'] = message_id
+
+            query = "INSERT INTO notifications(notification, notification_template_id, user_id, datetime,"\
+                    "notification_sent_by) VALUES('{}',{}, {},'{}',{}) RETURNING id;" \
+                .format(message_template, notification_data[2], data['receiver_id'], notified_at,
+                        data["sender_id"])
+            db_connection.cursor.execute(query)
+            notification_id = db_connection.cursor.fetchone()[0]
+            if notification_status:
+                push_notification(user_id=data['receiver_id'], sender_id=data['sender_id'], title=title,
+                                  message_template=message_template, notification_id=notification_id,
+                                  notify_type=notification_data[3], room_id=data['room_id'])
+            db_connection.connection.commit()
 
         except (psycopg2.ProgrammingError, psycopg2.DatabaseError):
             db_connection.connection.rollback()
@@ -79,8 +110,8 @@ def handle_send_message_event(data):
         finally:
             db_connection.cursor.close()
             db_connection.connection.close()
-        data['created_at'] = str(created_at)
-
+        IST_time = created_at.replace(tzinfo=pytz.utc).astimezone(pytz.timezone('Asia/Kolkata'))
+        data["created_at"] = str(IST_time)
         socketio.emit('receive_message', data, room=data['room_id'])
 
     # except InvalidUsage as e:
@@ -113,6 +144,7 @@ def handle_join_room_event(data):
         # update the user's unread message status of joined room chat
         try:
             db_connection = connect_database.ConnectDatabase()
+
             query = "UPDATE messages SET status = true WHERE receiver_id = {} and chat_room_id ={} and status = false;" \
                 .format(data['user_id'], data['room_id'])
             db_connection.cursor.execute(query)
@@ -153,10 +185,40 @@ def handle_chat_request_event(data):
         data['button_key'] = 'pending'
         try:
             db_connection = connect_database.ConnectDatabase()
+            query = "SELECT DISTINCT notification_template.template, notification_type.type,notification_template.id, \
+                     notification_type.route FROM notification_template JOIN notification_type ON notification_type.id =\
+                     notification_template.type_id WHERE notification_template.language_id= {}and \
+                     notification_template.type_id = 11;".format(data['language_id'], )
+            db_connection.cursor.execute(query)
+            notification_data = db_connection.cursor.fetchone()
+            title = notification_data[1]
+            query = "SELECT name FROM users WHERE id={};".format(data['sender_id'], )
+            db_connection.cursor.execute(query)
+            name = db_connection.cursor.fetchone()[0]
+            template = notification_data[0]
+            message_template = template.replace("<name>", name)
+
+            query = "SELECT  notification_status FROM users WHERE id={};".format(data['receiver_id'], )
+            db_connection.cursor.execute(query)
+            notification_status = db_connection.cursor.fetchone()[0]
+            notified_at = datetime.utcnow()
+
             query = "INSERT INTO chat_requests(sender_id, receiver_id, created_at, button_key) VALUES({},{},'{}','{}');" \
                 .format(data['sender_id'], data['receiver_id'], created_at, data['button_key'])
             db_connection.cursor.execute(query)
+
+            query = "INSERT INTO notifications(notification, notification_template_id, user_id, datetime," \
+                    "notification_sent_by) VALUES('{}',{}, {},'{}',{}) RETURNING id;" \
+                .format(message_template, notification_data[2], data['receiver_id'], notified_at,
+                        data["sender_id"])
+            db_connection.cursor.execute(query)
+            notification_id = db_connection.cursor.fetchone()[0]
+            if notification_status:
+                push_notification(user_id=data['receiver_id'], sender_id=data['sender_id'], title=title,
+                                  message_template=message_template, notification_id=notification_id,
+                                  notify_type=notification_data[3])
             db_connection.connection.commit()
+
         except (psycopg2.ProgrammingError, psycopg2.DatabaseError):
             db_connection.connection.rollback()
             traceback.print_exc()
@@ -164,7 +226,8 @@ def handle_chat_request_event(data):
         finally:
             db_connection.cursor.close()
             db_connection.connection.close()
-        data['created_at'] = str(created_at)
+        IST_time = created_at.replace(tzinfo=pytz.utc).astimezone(pytz.timezone('Asia/Kolkata'))
+        data["created_at"] = str(IST_time)
         socketio.emit('receive_permission', data, namespace='/notifs')
 
     # except InvalidUsage as e:

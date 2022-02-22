@@ -20,3 +20,4 @@ pyodm==1.5.9
 Flask-Socketio==5.1.1
 gevent==21.12.0
 eventlet==0.33.0
+pyfcm==1.5.4
