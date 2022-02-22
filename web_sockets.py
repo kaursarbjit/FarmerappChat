@@ -88,7 +88,6 @@ def handle_send_message_event(data):
                                                                      created_at)
             db_connection.cursor.execute(query)
             message_id = db_connection.cursor.fetchone()[0]
-
             data['message_id'] = message_id
 
             query = "INSERT INTO notifications(notification, notification_template_id, user_id, datetime,"\
