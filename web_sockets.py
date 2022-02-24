@@ -58,6 +58,7 @@ def handle_send_message_event(data):
         date = datetime.utcnow()
         created_at = date.replace(tzinfo=pytz.utc).astimezone(pytz.timezone('Asia/Kolkata'))
         # fetch data receiver data with the help of sender_id and room_id
+
         data = fetch_room_members(data)
 
         # insert data in message table
